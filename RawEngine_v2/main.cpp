@@ -8,6 +8,7 @@
 #include "core/mesh.h"
 #include "core/assimpLoader.h"
 #include "core/texture.h"
+#include "core/RenderPass.h"
 
 //#define MAC_CLION
 #define VSTUDIO
@@ -95,13 +96,13 @@ int main() {
     }
 
     IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO &io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    // ImGui::CreateContext();
+    // ImGuiIO &io = ImGui::GetIO();
+    // io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
     //Setup platforms
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init("#version 400");
+    // ImGui_ImplGlfw_InitForOpenGL(window, true);
+    // ImGui_ImplOpenGL3_Init("#version 400");
 
     glEnable(GL_DEPTH_TEST);
     glFrontFace(GL_CCW);
@@ -112,7 +113,11 @@ int main() {
 
     const GLuint modelVertexShader = generateShader("shaders/modelVertex.vs", GL_VERTEX_SHADER);
     const GLuint fragmentShader = generateShader("shaders/fragment.fs", GL_FRAGMENT_SHADER);
-    const GLuint textureShader = generateShader("shaders/texture.fs", GL_FRAGMENT_SHADER);
+
+    const GLuint postProcessingVertexShader = generateShader("shaders/postProcessing.vs", GL_VERTEX_SHADER);
+    const GLuint postProcessingFragmentShader = generateShader("shaders/postProcessing.fs", GL_FRAGMENT_SHADER);
+
+
 
     int success;
     char infoLog[512];
@@ -125,27 +130,24 @@ int main() {
         glGetProgramInfoLog(modelShaderProgram, 512, NULL, infoLog);
         printf("Error! Making Shader Program: %s\n", infoLog);
     }
-    const unsigned int textureShaderProgram = glCreateProgram();
-    glAttachShader(textureShaderProgram, modelVertexShader);
-    glAttachShader(textureShaderProgram, textureShader);
-    glLinkProgram(textureShaderProgram);
-    glGetProgramiv(textureShaderProgram, GL_LINK_STATUS, &success);
+    const unsigned int postProcessingShaderProgram = glCreateProgram();
+    glAttachShader(postProcessingShaderProgram, postProcessingVertexShader);
+    glAttachShader(postProcessingShaderProgram, postProcessingFragmentShader);
+    glLinkProgram(postProcessingShaderProgram);
+    glGetProgramiv(postProcessingShaderProgram, GL_LINK_STATUS, &success);
     if (!success) {
-        glGetProgramInfoLog(textureShaderProgram, 512, NULL, infoLog);
+        glGetProgramInfoLog(postProcessingShaderProgram, 512, NULL, infoLog);
         printf("Error! Making Shader Program: %s\n", infoLog);
     }
 
     glDeleteShader(modelVertexShader);
     glDeleteShader(fragmentShader);
-    glDeleteShader(textureShader);
+    glDeleteShader(postProcessingVertexShader);
+    glDeleteShader(postProcessingFragmentShader);
 
-    core::Mesh quad = core::Mesh::generateQuad();
-    core::Model quadModel({quad});
-    quadModel.translate(glm::vec3(0,0,-2.5));
-    quadModel.scale(glm::vec3(5, 5, 1));
+    core::RenderPass volumetricPass = core::RenderPass();
 
     core::Model suzanne = core::AssimpLoader::loadModel("models/nonormalmonkey.obj");
-    core::Texture cmgtGatoTexture("textures/CMGaTo_crop.png");
 
     glm::vec4 clearColor = glm::vec4(0.2f, 0.2f, 0.2f, 1.0f);
     glClearColor(clearColor.r,
@@ -163,54 +165,99 @@ int main() {
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(g_width) / static_cast<float>(g_height), 0.1f, 100.0f);
 
     GLint mvpMatrixUniform = glGetUniformLocation(modelShaderProgram, "mvpMatrix");
-    GLint textureModelUniform = glGetUniformLocation(textureShaderProgram, "mvpMatrix");
-    GLint textureUniform = glGetUniformLocation(textureShaderProgram, "text");
 
     double currentTime = glfwGetTime();
     double finishFrameTime = 0.0;
     float deltaTime = 0.0f;
     float rotationStrength = 100.0f;
+
+
+    //Setup framebuffer
+    unsigned int fbo;
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+    //Setup post-processing texture
+    unsigned int texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, g_width, g_height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+
+    //Setup renderbuffer to allow for depth testing
+    unsigned int rbo;
+    glGenRenderbuffers(1, &rbo);
+    glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, g_width, g_height);
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
+
+    if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        printf("ERROR::FRAMEBUFFER:: Framebuffer is not complete!");
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
     while (!glfwWindowShouldClose(window)) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-        ImGui::Begin("Raw Engine v2");
-        ImGui::Text("Hello :)");
-        ImGui::End();
+        // ImGui_ImplOpenGL3_NewFrame();
+        // ImGui_ImplGlfw_NewFrame();
+        // ImGui::NewFrame();
+        // ImGui::Begin("Raw Engine v2");
+        // // ImGui::Text("Hello :)");
+        // ImGui::End();
 
         processInput(window);
-        suzanne.rotate(glm::vec3(0.0f, 1.0f, 0.0f), glm::radians(rotationStrength) * static_cast<float>(deltaTime));
 
-        glUseProgram(textureShaderProgram);
-        glUniformMatrix4fv(textureModelUniform, 1, GL_FALSE, glm::value_ptr(projection * view * quadModel.getModelMatrix()));
-        glActiveTexture(GL_TEXTURE0);
-        glUniform1i(textureUniform, 0);
-        glBindTexture(GL_TEXTURE_2D, cmgtGatoTexture.getId());
-        quadModel.render();
-        glBindVertexArray(0);
-        glActiveTexture(GL_TEXTURE0);
+        //First, render the scene into a texture
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glClearColor(clearColor.r, clearColor.g, clearColor.b, clearColor.a);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_DEPTH_TEST);
+
+
+        suzanne.rotate(glm::vec3(0.0f, 1.0f, 0.0f), glm::radians(rotationStrength) * static_cast<float>(deltaTime));
 
         glUseProgram(modelShaderProgram);
         glUniformMatrix4fv(mvpMatrixUniform, 1, GL_FALSE, glm::value_ptr(projection * view * suzanne.getModelMatrix()));
         suzanne.render();
         glBindVertexArray(0);
 
-        ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        //After scene is rendered into the texture, render the texture onto the screen
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glClearColor(1.0f , 1.0f , 1.0f , 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        glUseProgram(postProcessingShaderProgram);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        volumetricPass.render();
+        glBindVertexArray(0);
+        glActiveTexture(GL_TEXTURE0);
+
+        // ImGui::Render();
+        // ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
         glfwPollEvents();
         finishFrameTime = glfwGetTime();
         deltaTime = static_cast<float>(finishFrameTime - currentTime);
         currentTime = finishFrameTime;
+
+
+
     }
 
     glDeleteProgram(modelShaderProgram);
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
+    glDeleteFramebuffers(1, &fbo);
+    // ImGui_ImplOpenGL3_Shutdown();
+    // ImGui_ImplGlfw_Shutdown();
+    // ImGui::DestroyContext();
 
     glfwTerminate();
     return 0;
