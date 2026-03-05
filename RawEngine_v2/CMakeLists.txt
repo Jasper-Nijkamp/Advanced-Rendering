@@ -17,6 +17,8 @@ set(IMGUI_SOURCES
         imgui/backends/imgui_impl_opengl3.cpp
         core/texture.cpp
         core/texture.h
+        core/RenderPass.cpp
+        core/RenderPass.h
 )
 
 add_executable(RawEngine main.cpp
