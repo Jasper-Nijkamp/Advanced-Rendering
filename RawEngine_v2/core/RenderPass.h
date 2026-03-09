@@ -8,12 +8,18 @@ namespace core {
         GLuint VBO;
         GLuint EBO;
         GLuint VAO;
+        GLuint FBO;
+        GLuint RBO;
         std::vector<GLuint> indices;
+
+        GLuint texture;
+
 
 
     public:
         RenderPass();
         void render();
+        void activate();
 
     private:
         void setupBuffers();
