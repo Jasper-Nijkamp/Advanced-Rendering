@@ -14,10 +14,12 @@ namespace core {
 
         GLuint texture;
 
+        glm::vec2 textureSize;
+
 
 
     public:
-        RenderPass();
+        RenderPass(glm::ivec2);
         void render();
         void activate();
 

@@ -151,9 +151,11 @@ int main() {
     glDeleteShader(postProcessingVertexShader);
     glDeleteShader(postProcessingFragmentShader);
 
-    core::RenderPass volumetricPass = core::RenderPass();
+    core::RenderPass volumetricPass = core::RenderPass(glm::ivec2(g_width, g_height));
 
     core::Model suzanne = core::AssimpLoader::loadModel("models/nonormalmonkey.obj");
+    suzanne.translate(glm::vec3(0.0f, 0.0f, -3.0f));
+    suzanne.scale(glm::vec3(1.5, 1.5, 1.5));
 
     glm::vec4 clearColor = glm::vec4(0.2f, 0.2f, 0.2f, 1.0f);
     glClearColor(clearColor.r,
@@ -204,6 +206,8 @@ int main() {
 
         //Set camera variables in shader
         glUseProgram(postProcessingShaderProgram);
+        glm::mat4x4 inv_projView = glm::inverse(projection * view);
+        glUniformMatrix4fv(glGetUniformLocation(postProcessingShaderProgram, "invProjView"), 1, GL_FALSE, glm::value_ptr(inv_projView));
         glUniform3f(glGetUniformLocation(postProcessingShaderProgram, "cameraPos"), cameraPos.x, cameraPos.y, cameraPos.z);
         glUniform3f(glGetUniformLocation(postProcessingShaderProgram, "cameraDir"), cameraDirection.x, cameraDirection.y, cameraDirection.z);
 

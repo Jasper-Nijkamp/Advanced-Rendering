@@ -1,7 +1,7 @@
 #include "RenderPass.h"
 
 namespace core {
-    RenderPass::RenderPass() : VBO(), EBO(), VAO(), FBO(), RBO(), texture()
+    RenderPass::RenderPass(const glm::ivec2 textureSize) : VBO(), EBO(), VAO(), FBO(), RBO(), texture(), textureSize(textureSize)
     {
         setupBuffers();
     }
@@ -34,26 +34,30 @@ namespace core {
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizei>(sizeof(unsigned int) * indices.size()),
                      &indices[0], GL_STATIC_DRAW);
 
+        //Create Quad
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vert), (void *) offsetof(Vert, pos));
         glEnableVertexAttribArray(1);
         glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vert), (void *) offsetof(Vert, uv));
         glBindVertexArray(0);
 
+        //Create Frame Buffer
         glGenFramebuffers(1, &FBO);
         glBindFramebuffer(GL_FRAMEBUFFER, FBO);
 
+        //Create render texture
         glGenTextures(1, &texture);
         glBindTexture(GL_TEXTURE_2D, texture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 800, 600, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, textureSize.x, textureSize.y, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glBindTexture(GL_TEXTURE_2D, 0);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
 
+        //Create Render Buffer
         glGenRenderbuffers(1, &RBO);
         glBindRenderbuffer(GL_RENDERBUFFER, RBO);
-        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, 800, 600);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, textureSize.x, textureSize.y);
         glBindRenderbuffer(GL_RENDERBUFFER, 0);
 
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, RBO);
