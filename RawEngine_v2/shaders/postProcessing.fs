@@ -14,8 +14,9 @@ uniform sampler2D screenTexture;
 struct Light{
     vec3 direction;
     vec3 color;
-    float intensity;
 };
+
+uniform Light light;
 
 struct Volume{
     vec3 position;
@@ -24,6 +25,8 @@ struct Volume{
     float sigma_s;
     float density;
 };
+
+uniform Volume volume;
 
 //PRNG function found on the internet
 float rand(vec2 co) {
@@ -72,13 +75,13 @@ float phase(float g, float cos_theta)
     return 1 / (4 * PI) * (1 - g * g) / (denom * sqrt(denom));
 }
 
-vec3 traceScene(vec3 rayOrigin, vec3 rayDirection, Volume sphere, Light light)
+vec3 traceScene(vec3 rayOrigin, vec3 rayDirection)
 {
     float t0, t1;
 //     vec3 bgColor = texture(screenTexture, TexCoords.st).rgb;
     vec3 bgColor = normalize(vec3(0.572, 0.772, 0.921));
 
-    if(raySphereIntersect(rayOrigin, rayDirection, sphere, t0, t1)){
+    if(raySphereIntersect(rayOrigin, rayDirection, volume, t0, t1)){
 
         float step_size = 0.2;
         int steps = int(ceil((t1 - t0) / step_size));
@@ -96,7 +99,7 @@ vec3 traceScene(vec3 rayOrigin, vec3 rayDirection, Volume sphere, Light light)
             float t = t0 + step_size * (i + rand(TexCoords.st));
             vec3 sample_pos = rayOrigin + t * rayDirection;
 
-            float sample_attenuation = exp(-step_size * sphere.density * (sphere.sigma_a + sphere.sigma_s));
+            float sample_attenuation = exp(-step_size * volume.density * (volume.sigma_a + volume.sigma_s));
             transparency *= sample_attenuation;
 
             if(transparency < 1e-3)
@@ -106,12 +109,12 @@ vec3 traceScene(vec3 rayOrigin, vec3 rayDirection, Volume sphere, Light light)
             }
 
             float lgt_t0, lgt_t1;
-            raySphereIntersect(sample_pos, -light.direction, sphere, lgt_t0, lgt_t1);
+            raySphereIntersect(sample_pos, -light.direction, volume, lgt_t0, lgt_t1);
             if(lgt_t1 > 0.0)
             {
                 float cos_theta = dot(rayDirection, light.direction);
-                float light_attenuation = exp(-sphere.density * lgt_t1 * (sphere.sigma_a + sphere.sigma_s));
-                result += sphere.density * sphere.sigma_s * phase(g, cos_theta) * light_attenuation * light.color * step_size;
+                float light_attenuation = exp(-volume.density * lgt_t1 * (volume.sigma_a + volume.sigma_s));
+                result += volume.density * volume.sigma_s * phase(g, cos_theta) * light_attenuation * light.color * step_size;
             }
         }
 
@@ -124,22 +127,9 @@ vec3 traceScene(vec3 rayOrigin, vec3 rayDirection, Volume sphere, Light light)
 
 void main()
 {
-    Volume sphere;
-    sphere.position = vec3(0.0, 0.0, 0.0);
-    sphere.radius = 1.0;
-    sphere.sigma_a = 0.1;
-    sphere.sigma_s = 0.5;
-    sphere.density = 1;
-
-    Light light;
-    light.direction = normalize(vec3(0.0, 0.0, 1.0));
-    light.color = normalize(vec3(1.0, 1.0, 1.0));
-
     vec3 rayOrigin = cameraPos;
     vec3 rayDirection = GetPixelDirection();
 
-    vec3 color = traceScene(rayOrigin, rayDirection, sphere, light);
+    vec3 color = traceScene(rayOrigin, rayDirection);
     FragColor = vec4(color, 1.0);
-
-    return;
 }

@@ -27,8 +27,8 @@
 #include <imgui_impl_opengl3.h>
 #endif
 
-int g_width = 800;
-int g_height = 600;
+int g_width = 1280;
+int g_height = 720;
 
 void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
@@ -76,6 +76,28 @@ void deactivateRenderPasses() {
     glClear(GL_COLOR_BUFFER_BIT);
 }
 
+
+void SetUniform(const unsigned int shaderProgram, const char *uniformName, const float x, const float y, const float z) {
+    glUniform3f(glGetUniformLocation(shaderProgram, uniformName), x, y, z);
+}
+
+void SetUniform(const unsigned int shaderProgram, const char *uniformName, const glm::vec3 vec) {
+    SetUniform(shaderProgram, uniformName, vec.x, vec.y, vec.z);
+}
+
+void SetUniform(const unsigned int shaderProgram, const char *uniformName, const float values[3]) {
+    SetUniform(shaderProgram, uniformName, values[0], values[1], values[2]);
+}
+
+void SetUniform(const unsigned int shaderProgram, const char *uniformName, const float value) {
+    glUniform1f(glGetUniformLocation(shaderProgram, uniformName), value);
+}
+
+void SetUniform(const unsigned int shaderProgram, const char *uniformName, const glm::mat4 matrix) {
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, uniformName), 1, GL_FALSE, glm::value_ptr(matrix));
+}
+
+
 int main() {
     glfwInit();
     glfwWindowHint(GLFW_SAMPLES, 4);
@@ -102,13 +124,13 @@ int main() {
     }
 
     IMGUI_CHECKVERSION();
-    // ImGui::CreateContext();
-    // ImGuiIO &io = ImGui::GetIO();
-    // io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    ImGui::CreateContext();
+    ImGuiIO &io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
     //Setup platforms
-    // ImGui_ImplGlfw_InitForOpenGL(window, true);
-    // ImGui_ImplOpenGL3_Init("#version 400");
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 400");
 
     glEnable(GL_DEPTH_TEST);
     glFrontFace(GL_CCW);
@@ -172,22 +194,48 @@ int main() {
     glm::mat4 view = glm::lookAt(cameraPos, cameraTarget, cameraUp);
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(g_width) / static_cast<float>(g_height), 0.1f, 100.0f);
 
-    GLint mvpMatrixUniform = glGetUniformLocation(modelShaderProgram, "mvpMatrix");
-
     double currentTime = glfwGetTime();
     double finishFrameTime = 0.0;
     float deltaTime = 0.0f;
     float rotationStrength = 100.0f;
 
+    float lightHorizontalAngle = glm::radians(260.0f);
+    float lightVerticalAngle = 0.0;
+    float lightColor[3] = { 1.0f, 1.0f, 1.0f };
+
+    float volumePosition[3] = { 0.0f, 0.0f, 0.0f };
+    float volumeRadius = 1.0f;
+    float volumeAbsorptionCoefficient = 0.1f;
+    float volumeScatteringCoefficient = 0.1f;
+    float volumeDensity = 1.0f;
+
     while (!glfwWindowShouldClose(window)) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // ImGui_ImplOpenGL3_NewFrame();
-        // ImGui_ImplGlfw_NewFrame();
-        // ImGui::NewFrame();
-        // ImGui::Begin("Raw Engine v2");
-        // // ImGui::Text("Hello :)");
-        // ImGui::End();
+
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+        ImGui::Begin("Light Settings");
+        ImGui::SliderAngle("Light Horizontal Angle", &lightHorizontalAngle, 0.0f, 360.0f);
+        ImGui::SliderAngle("Light Vertical Angle", &lightVerticalAngle, -90.0f, 90.0f);
+        glm::vec3 lightDirection = glm::vec3(
+            cos(lightVerticalAngle) * cos(lightHorizontalAngle),
+            sin(lightVerticalAngle),
+            cos(lightVerticalAngle) * sin(lightHorizontalAngle)
+        );
+        ImGui::Text("Direction: %.2f, %.2f, %.2f", lightDirection.x, lightDirection.y, lightDirection.z);
+        ImGui::ColorPicker3("Light Color", lightColor);
+        ImGui::End();
+
+        ImGui::Begin("Volume Settings");
+        ImGui::SliderFloat3("Position", &volumePosition[0], -10.0f, 10.0f);
+        ImGui::SliderFloat("Radius", &volumeRadius, 0.1f, 10.0f);
+        ImGui::SliderFloat("Absorption Coefficient", &volumeAbsorptionCoefficient, 0.0f, 1.0f);
+        ImGui::SliderFloat("Scattering Coefficient", &volumeScatteringCoefficient, 0.0f, 1.0f);
+        ImGui::SliderFloat("Density", &volumeDensity, 0.0f, 10.0f);
+        ImGui::End();
+
 
         processInput(window);
 
@@ -197,7 +245,7 @@ int main() {
         suzanne.rotate(glm::vec3(0.0f, 1.0f, 0.0f), glm::radians(rotationStrength) * static_cast<float>(deltaTime));
 
         glUseProgram(modelShaderProgram);
-        glUniformMatrix4fv(mvpMatrixUniform, 1, GL_FALSE, glm::value_ptr(projection * view * suzanne.getModelMatrix()));
+        SetUniform(modelShaderProgram, "mvpMatrix", projection * view * suzanne.getModelMatrix());
         suzanne.render();
         glBindVertexArray(0);
 
@@ -207,17 +255,28 @@ int main() {
         //Set camera variables in shader
         glUseProgram(postProcessingShaderProgram);
         glm::mat4x4 inv_projView = glm::inverse(projection * view);
-        glUniformMatrix4fv(glGetUniformLocation(postProcessingShaderProgram, "invProjView"), 1, GL_FALSE, glm::value_ptr(inv_projView));
-        glUniform3f(glGetUniformLocation(postProcessingShaderProgram, "cameraPos"), cameraPos.x, cameraPos.y, cameraPos.z);
-        glUniform3f(glGetUniformLocation(postProcessingShaderProgram, "cameraDir"), cameraDirection.x, cameraDirection.y, cameraDirection.z);
+        SetUniform(postProcessingShaderProgram, "invProjView", inv_projView);
+        SetUniform(postProcessingShaderProgram, "cameraPos", cameraPos);
+        SetUniform(postProcessingShaderProgram, "cameraDir", cameraDirection);
+
+        //Set light variables
+        SetUniform(postProcessingShaderProgram, "light.direction", lightDirection);
+        SetUniform(postProcessingShaderProgram, "light.color", lightColor);
+
+        //Set volume variables
+        SetUniform(postProcessingShaderProgram, "volume.position", volumePosition);
+        SetUniform(postProcessingShaderProgram, "volume.radius", volumeRadius);
+        SetUniform(postProcessingShaderProgram, "volume.sigma_a", volumeAbsorptionCoefficient);
+        SetUniform(postProcessingShaderProgram, "volume.sigma_s", volumeScatteringCoefficient);
+        SetUniform(postProcessingShaderProgram, "volume.density", volumeDensity);
 
         volumetricPass.render();
 
         glBindVertexArray(0);
         glActiveTexture(GL_TEXTURE0);
 
-        // ImGui::Render();
-        // ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -228,9 +287,9 @@ int main() {
     }
 
     glDeleteProgram(modelShaderProgram);
-    // ImGui_ImplOpenGL3_Shutdown();
-    // ImGui_ImplGlfw_Shutdown();
-    // ImGui::DestroyContext();
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
 
     glfwTerminate();
     return 0;
