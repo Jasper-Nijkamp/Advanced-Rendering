@@ -27,8 +27,8 @@
 #include <imgui_impl_opengl3.h>
 #endif
 
-int g_width = 1280;
-int g_height = 720;
+int g_width = 1920;
+int g_height = 1080;
 
 void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
@@ -108,7 +108,7 @@ int main() {
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-    GLFWwindow *window = glfwCreateWindow(g_width, g_height, "LearnOpenGL", NULL, NULL);
+    GLFWwindow *window = glfwCreateWindow(g_width, g_height, "Volume Rendering", NULL, NULL);
     if (window == NULL) {
         printf("Failed to create GLFW window\n");
         glfwTerminate();
@@ -204,10 +204,10 @@ int main() {
     float lightColor[3] = { 1.0f, 1.0f, 1.0f };
 
     float volumePosition[3] = { 0.0f, 0.0f, 0.0f };
-    float volumeRadius = 1.0f;
-    float volumeAbsorptionCoefficient = 0.1f;
-    float volumeScatteringCoefficient = 0.1f;
-    float volumeDensity = 1.0f;
+    float volumeRadius = 4.0f;
+    float volumeAbsorptionCoefficient = 0.2f;
+    float volumeScatteringCoefficient = 0.8f;
+    float volumeSpeed = 5.0f;
 
     while (!glfwWindowShouldClose(window)) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -233,7 +233,7 @@ int main() {
         ImGui::SliderFloat("Radius", &volumeRadius, 0.1f, 10.0f);
         ImGui::SliderFloat("Absorption Coefficient", &volumeAbsorptionCoefficient, 0.0f, 1.0f);
         ImGui::SliderFloat("Scattering Coefficient", &volumeScatteringCoefficient, 0.0f, 1.0f);
-        ImGui::SliderFloat("Density", &volumeDensity, 0.0f, 10.0f);
+        ImGui::SliderFloat("Speed", &volumeSpeed, 0.0f, 10.0f);
         ImGui::End();
 
 
@@ -268,7 +268,9 @@ int main() {
         SetUniform(postProcessingShaderProgram, "volume.radius", volumeRadius);
         SetUniform(postProcessingShaderProgram, "volume.sigma_a", volumeAbsorptionCoefficient);
         SetUniform(postProcessingShaderProgram, "volume.sigma_s", volumeScatteringCoefficient);
-        SetUniform(postProcessingShaderProgram, "volume.density", volumeDensity);
+        SetUniform(postProcessingShaderProgram, "volume.speed", volumeSpeed);
+
+        SetUniform(postProcessingShaderProgram, "time", static_cast<float>(glfwGetTime()));
 
         volumetricPass.render();
 
