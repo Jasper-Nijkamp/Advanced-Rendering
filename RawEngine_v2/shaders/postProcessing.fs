@@ -195,12 +195,11 @@ vec3 traceScene(vec3 rayOrigin, vec3 rayDirection)
 
     if(raySphereIntersect(rayOrigin, rayDirection, volume, t0, t1)){
 
-        float step_size = 0.2;
+        float step_size = 0.5;
         int steps = int(ceil((t1 - t0) / step_size));
         step_size = (t1 - t0) / steps;
 
         float transparency = 1.0;
-        int d = 2;
 
         vec3 result = vec3(0.0, 0.0, 0.0);
 
@@ -210,27 +209,38 @@ vec3 traceScene(vec3 rayOrigin, vec3 rayDirection)
 
         for(int i = 0; i < steps; ++i)
         {
-            float t = t0 + step_size * (i + rand(TexCoords.st));
+            float t = t0 + step_size * (i + 0.5);
             vec3 sample_pos = rayOrigin + t * rayDirection;
 
             float density = eval_density(sample_pos, volume);
 
-            float sample_attenuation = exp(-step_size * density * sigma_t);
-            transparency *= sample_attenuation;
+            float sample_transparency = exp(-step_size * density * sigma_t);
+            transparency *= sample_transparency;
 
-            if(transparency < 1e-3)
-            {
-                if(rand(TexCoords) > 1.0 / d) break;
-                else transparency *= d;
-            }
 
             float lgt_t0, lgt_t1;
             raySphereIntersect(sample_pos, -light.direction, volume, lgt_t0, lgt_t1);
             if(lgt_t1 > 0.0) //Inside circle
             {
-                float cos_theta = dot(rayDirection, light.direction);
-                float light_attenuation = exp(-density * lgt_t1 * sigma_t);
-                result += density * volume.sigma_s * phase(g, cos_theta) * light_attenuation * light.color * step_size * transparency;
+                int numStepsLight = int(ceil(lgt_t1 / step_size));
+                float strideLight = lgt_t1 / numStepsLight;
+                float tau = 0;
+
+                for(int j = 0; j < numStepsLight; j++)
+                {
+                    float tLight = strideLight * (j + 0.5);
+                    vec3 lightSamplePos = sample_pos + light.direction * tLight;
+                    tau += eval_density(lightSamplePos, volume);
+                }
+
+                float light_att = exp(-tau * strideLight * sigma_t);
+                float cos_theta = dot(rayDirection, -light.direction);
+                result += light.color * light_att * phase(cos_theta, g) * volume.sigma_s * transparency * step_size * volume.density;
+            }
+
+            if(transparency < 1e-3)
+            {
+                break;
             }
         }
 
