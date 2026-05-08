@@ -143,7 +143,7 @@ int main() {
     const GLuint fragmentShader = generateShader("shaders/fragment.fs", GL_FRAGMENT_SHADER);
 
     const GLuint postProcessingVertexShader = generateShader("shaders/postProcessing.vs", GL_VERTEX_SHADER);
-    const GLuint postProcessingFragmentShader = generateShader("shaders/postProcessing.fs", GL_FRAGMENT_SHADER);
+    const GLuint postProcessingFragmentShader = generateShader("shaders/VolumeRendering.fs", GL_FRAGMENT_SHADER);
 
 
 
