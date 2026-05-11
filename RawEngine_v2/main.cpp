@@ -9,6 +9,7 @@
 #include "core/assimpLoader.h"
 #include "core/texture.h"
 #include "core/RenderPass.h"
+#include "Custom/perlin.h"
 
 //#define MAC_CLION
 #define VSTUDIO
@@ -93,8 +94,29 @@ void SetUniform(const unsigned int shaderProgram, const char *uniformName, const
     glUniform1f(glGetUniformLocation(shaderProgram, uniformName), value);
 }
 
+void SetUniform(const unsigned int shaderProgram, const char *uniformName, const int value) {
+    glUniform1i(glGetUniformLocation(shaderProgram, uniformName), value);
+}
+
 void SetUniform(const unsigned int shaderProgram, const char *uniformName, const glm::mat4 matrix) {
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, uniformName), 1, GL_FALSE, glm::value_ptr(matrix));
+}
+
+GLuint createVolumeTexture(std::vector<float> &volume, int size) {
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_3D, textureID);
+
+    glTexImage3D(GL_TEXTURE_3D, 0, GL_R16F, size, size, size, 0, GL_RED, GL_FLOAT, volume.data());
+
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    return textureID;
 }
 
 
@@ -115,6 +137,7 @@ int main() {
         return -1;
     }
     glfwMakeContextCurrent(window);
+    glfwSwapInterval(0); //Uncap framerate for accurate measurements
 
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 
@@ -194,6 +217,28 @@ int main() {
     glm::mat4 view = glm::lookAt(cameraPos, cameraTarget, cameraUp);
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(g_width) / static_cast<float>(g_height), 0.1f, 100.0f);
 
+    std::vector<GLuint> textures;
+    std::vector<int> textureSizes;
+    for (int textureSize = 8; textureSize <= 512; textureSize *= 2) {
+        std::vector<float> grid = generateVoxelGrid(textureSize);
+        GLuint tex = createVolumeTexture(grid, textureSize);
+        textures.push_back(tex);
+        textureSizes.push_back(textureSize);
+    }
+
+    const char* items[] = {
+        "8x8",
+        "16x16",
+        "32x32",
+        "64x64",
+        "128x128",
+        "256x256",
+        // "512x512",
+        // "1024x1024"
+    };
+
+    int currentTextureIndex = 2;
+
     double currentTime = glfwGetTime();
     double finishFrameTime = 0.0;
     float deltaTime = 0.0f;
@@ -204,13 +249,18 @@ int main() {
     float lightColor[3] = { 1.0f, 1.0f, 1.0f };
 
     float volumePosition[3] = { 0.0f, 0.0f, 0.0f };
-    float volumeRadius = 4.0f;
-    float volumeAbsorptionCoefficient = 0.2f;
-    float volumeScatteringCoefficient = 0.8f;
+    float volumeSize = 2.0f;
+    float volumeAbsorptionCoefficient = 0.3f;
+    float volumeScatteringCoefficient = 0.3f;
     float volumeSpeed = 5.0f;
+
+    float stepSizeFactor = 1.0f;
+
+    double lastFrameTime = 0.0f;
 
     while (!glfwWindowShouldClose(window)) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 
 
         ImGui_ImplOpenGL3_NewFrame();
@@ -230,12 +280,57 @@ int main() {
 
         ImGui::Begin("Volume Settings");
         ImGui::SliderFloat3("Position", &volumePosition[0], -10.0f, 10.0f);
-        ImGui::SliderFloat("Radius", &volumeRadius, 0.1f, 10.0f);
+        ImGui::SliderFloat("Size", &volumeSize, 0.1f, 10.0f);
         ImGui::SliderFloat("Absorption Coefficient", &volumeAbsorptionCoefficient, 0.0f, 1.0f);
         ImGui::SliderFloat("Scattering Coefficient", &volumeScatteringCoefficient, 0.0f, 1.0f);
-        ImGui::SliderFloat("Speed", &volumeSpeed, 0.0f, 10.0f);
+        // ImGui::SliderFloat("Speed", &volumeSpeed, 0.0f, 10.0f);
         ImGui::End();
 
+
+        ImGui::Begin("Performance");
+        ImGui::SliderFloat("Step Size Factor", &stepSizeFactor, 0.25f, 4.0f);
+        if (ImGui::Combo("Texture Size", &currentTextureIndex, items, IM_ARRAYSIZE(items))) {
+            GLuint selectedTexture = textures[currentTextureIndex];
+
+            glUseProgram(postProcessingShaderProgram);
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_3D, selectedTexture);
+        }
+
+        static bool useLinearFiltering = true;
+        if(ImGui::Checkbox("Linear Filtering", &useLinearFiltering)) {
+            // Update when checkbox changes
+            glBindTexture(GL_TEXTURE_3D, textures[currentTextureIndex]);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER,
+                            useLinearFiltering ? GL_LINEAR : GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER,
+                            useLinearFiltering ? GL_LINEAR : GL_NEAREST);
+        }
+
+        double currentFrameTime = glfwGetTime();
+        double frameTime = currentFrameTime - lastFrameTime;
+        frameTime = frameTime * 1000.0f;
+
+        static float frameHistory[100] = {};
+        static int frameIndex = 0;
+
+        frameHistory[frameIndex] = static_cast<float>(frameTime);
+        frameIndex = (frameIndex + 1) % 100;
+
+        float total = 0.0f;
+        for (int i = 0; i < 100; i++) {
+            total += frameHistory[i];
+        }
+
+        float avgFrameTime = total / 100.0f;
+
+        lastFrameTime = currentFrameTime;
+
+        ImGui::PlotLines("Frame Times", frameHistory, 100, 0, nullptr, 0.0f, 50.0f, ImVec2(0, 80));
+        ImGui::Text("Current Frame Time: %.2f ms", frameTime);
+        ImGui::Text("Average Frame Time (Last 100 Frames: %.2f ms", avgFrameTime);
+        ImGui::End();
 
         processInput(window);
 
@@ -252,25 +347,33 @@ int main() {
         deactivateRenderPasses();
 
 
-        //Set camera variables in shader
+        //Set camera uniforms
         glUseProgram(postProcessingShaderProgram);
         glm::mat4x4 inv_projView = glm::inverse(projection * view);
         SetUniform(postProcessingShaderProgram, "invProjView", inv_projView);
         SetUniform(postProcessingShaderProgram, "cameraPos", cameraPos);
         SetUniform(postProcessingShaderProgram, "cameraDir", cameraDirection);
 
-        //Set light variables
+        //Set light uniforms
         SetUniform(postProcessingShaderProgram, "light.direction", lightDirection);
         SetUniform(postProcessingShaderProgram, "light.color", lightColor);
 
-        //Set volume variables
+        //Set volume uniforms
         SetUniform(postProcessingShaderProgram, "volume.position", volumePosition);
-        SetUniform(postProcessingShaderProgram, "volume.radius", volumeRadius);
         SetUniform(postProcessingShaderProgram, "volume.sigma_a", volumeAbsorptionCoefficient);
         SetUniform(postProcessingShaderProgram, "volume.sigma_s", volumeScatteringCoefficient);
-        SetUniform(postProcessingShaderProgram, "volume.speed", volumeSpeed);
+        // SetUniform(postProcessingShaderProgram, "volume.speed", volumeSpeed);
+
+        //Set grid uniforms
+        glm::vec3 volumePosVec = glm::vec3(volumePosition[0], volumePosition[1], volumePosition[2]);
+        glm::vec3 boundsMin = glm::vec3(-1.0, -1.0, -1.0) * volumeSize + volumePosVec;
+        glm::vec3 boundsMax = glm::vec3(1.0, 1.0, 1.0) * volumeSize + volumePosVec;
+        SetUniform(postProcessingShaderProgram, "grid.boundsMin", boundsMin);
+        SetUniform(postProcessingShaderProgram, "grid.boundsMax", boundsMax);
+        SetUniform(postProcessingShaderProgram, "grid.resolution", textureSizes[currentTextureIndex]);
 
         SetUniform(postProcessingShaderProgram, "time", static_cast<float>(glfwGetTime()));
+        SetUniform(postProcessingShaderProgram, "stepSizeFactor", 1.0f / stepSizeFactor);
 
         volumetricPass.render();
 
@@ -285,7 +388,6 @@ int main() {
         finishFrameTime = glfwGetTime();
         deltaTime = static_cast<float>(finishFrameTime - currentTime);
         currentTime = finishFrameTime;
-
     }
 
     glDeleteProgram(modelShaderProgram);

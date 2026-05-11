@@ -15,10 +15,6 @@ set(IMGUI_SOURCES
         imgui/imgui_widgets.cpp
         imgui/backends/imgui_impl_glfw.cpp
         imgui/backends/imgui_impl_opengl3.cpp
-        core/texture.cpp
-        core/texture.h
-        core/RenderPass.cpp
-        core/RenderPass.h
 )
 
 add_executable(RawEngine main.cpp
@@ -30,6 +26,12 @@ add_executable(RawEngine main.cpp
         core/vertex.h
         core/model.cpp
         core/model.h
+        core/texture.cpp
+        core/texture.h
+        core/RenderPass.cpp
+        core/RenderPass.h
+        Custom/stb_perlin.h
+        Custom/perlin.h
 )
 
 add_custom_command(
