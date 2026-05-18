@@ -9,6 +9,7 @@
 #include "core/assimpLoader.h"
 #include "core/texture.h"
 #include "core/RenderPass.h"
+#include "Custom/PerformanceLogger.h"
 #include "Custom/perlin.h"
 
 //#define MAC_CLION
@@ -217,32 +218,6 @@ int main() {
     glm::mat4 view = glm::lookAt(cameraPos, cameraTarget, cameraUp);
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(g_width) / static_cast<float>(g_height), 0.1f, 100.0f);
 
-    std::vector<GLuint> textures;
-    std::vector<int> textureSizes;
-    for (int textureSize = 8; textureSize <= 512; textureSize *= 2) {
-        std::vector<float> grid = generateVoxelGrid(textureSize);
-        GLuint tex = createVolumeTexture(grid, textureSize);
-        textures.push_back(tex);
-        textureSizes.push_back(textureSize);
-    }
-
-    const char* items[] = {
-        "8x8",
-        "16x16",
-        "32x32",
-        "64x64",
-        "128x128",
-        "256x256",
-        // "512x512",
-        // "1024x1024"
-    };
-
-    int currentTextureIndex = 2;
-
-    double currentTime = glfwGetTime();
-    double finishFrameTime = 0.0;
-    float deltaTime = 0.0f;
-    float rotationStrength = 100.0f;
 
     float lightHorizontalAngle = glm::radians(260.0f);
     float lightVerticalAngle = 0.0;
@@ -252,16 +227,30 @@ int main() {
     float volumeSize = 2.0f;
     float volumeAbsorptionCoefficient = 0.3f;
     float volumeScatteringCoefficient = 0.3f;
-    float volumeSpeed = 5.0f;
 
-    float stepSizeFactor = 1.0f;
-
+    double currentTime;
     double lastFrameTime = 0.0f;
+
+    float stepSizeFactor = 4.0f;
+    const int textureSize = 64;
+    const auto fileName = std::string("StepSize4_0.csv");
+
+    PerformanceLogger logger = PerformanceLogger(fileName.c_str(), false);
+    double testStartTime = 5.0;
+    bool initialized = false;
+
+    std::vector<float> grid = generateVoxelGrid(textureSize);
+    GLuint tex = createVolumeTexture(grid, textureSize);
+
+    const int numFramesToLog = 200;
 
     while (!glfwWindowShouldClose(window)) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-
+        if (!initialized) {
+            initialized = true;
+            testStartTime = glfwGetTime() + testStartTime;
+        }
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -283,61 +272,25 @@ int main() {
         ImGui::SliderFloat("Size", &volumeSize, 0.1f, 10.0f);
         ImGui::SliderFloat("Absorption Coefficient", &volumeAbsorptionCoefficient, 0.0f, 1.0f);
         ImGui::SliderFloat("Scattering Coefficient", &volumeScatteringCoefficient, 0.0f, 1.0f);
-        // ImGui::SliderFloat("Speed", &volumeSpeed, 0.0f, 10.0f);
         ImGui::End();
-
 
         ImGui::Begin("Performance");
         ImGui::SliderFloat("Step Size Factor", &stepSizeFactor, 0.25f, 4.0f);
-        if (ImGui::Combo("Texture Size", &currentTextureIndex, items, IM_ARRAYSIZE(items))) {
-            GLuint selectedTexture = textures[currentTextureIndex];
-
-            glUseProgram(postProcessingShaderProgram);
-
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_3D, selectedTexture);
-        }
-
         static bool useLinearFiltering = true;
         if(ImGui::Checkbox("Linear Filtering", &useLinearFiltering)) {
             // Update when checkbox changes
-            glBindTexture(GL_TEXTURE_3D, textures[currentTextureIndex]);
+            glBindTexture(GL_TEXTURE_3D, tex);
             glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER,
                             useLinearFiltering ? GL_LINEAR : GL_NEAREST);
             glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER,
                             useLinearFiltering ? GL_LINEAR : GL_NEAREST);
         }
-
-        double currentFrameTime = glfwGetTime();
-        double frameTime = currentFrameTime - lastFrameTime;
-        frameTime = frameTime * 1000.0f;
-
-        static float frameHistory[100] = {};
-        static int frameIndex = 0;
-
-        frameHistory[frameIndex] = static_cast<float>(frameTime);
-        frameIndex = (frameIndex + 1) % 100;
-
-        float total = 0.0f;
-        for (int i = 0; i < 100; i++) {
-            total += frameHistory[i];
-        }
-
-        float avgFrameTime = total / 100.0f;
-
-        lastFrameTime = currentFrameTime;
-
-        ImGui::PlotLines("Frame Times", frameHistory, 100, 0, nullptr, 0.0f, 50.0f, ImVec2(0, 80));
-        ImGui::Text("Current Frame Time: %.2f ms", frameTime);
-        ImGui::Text("Average Frame Time (Last 100 Frames: %.2f ms", avgFrameTime);
+        if (logger.isRecording) ImGui::Text("Testing Performance...");
         ImGui::End();
 
         processInput(window);
 
         volumetricPass.activate();
-
-
-        suzanne.rotate(glm::vec3(0.0f, 1.0f, 0.0f), glm::radians(rotationStrength) * static_cast<float>(deltaTime));
 
         glUseProgram(modelShaderProgram);
         SetUniform(modelShaderProgram, "mvpMatrix", projection * view * suzanne.getModelMatrix());
@@ -345,7 +298,6 @@ int main() {
         glBindVertexArray(0);
 
         deactivateRenderPasses();
-
 
         //Set camera uniforms
         glUseProgram(postProcessingShaderProgram);
@@ -362,7 +314,6 @@ int main() {
         SetUniform(postProcessingShaderProgram, "volume.position", volumePosition);
         SetUniform(postProcessingShaderProgram, "volume.sigma_a", volumeAbsorptionCoefficient);
         SetUniform(postProcessingShaderProgram, "volume.sigma_s", volumeScatteringCoefficient);
-        // SetUniform(postProcessingShaderProgram, "volume.speed", volumeSpeed);
 
         //Set grid uniforms
         glm::vec3 volumePosVec = glm::vec3(volumePosition[0], volumePosition[1], volumePosition[2]);
@@ -370,7 +321,7 @@ int main() {
         glm::vec3 boundsMax = glm::vec3(1.0, 1.0, 1.0) * volumeSize + volumePosVec;
         SetUniform(postProcessingShaderProgram, "grid.boundsMin", boundsMin);
         SetUniform(postProcessingShaderProgram, "grid.boundsMax", boundsMax);
-        SetUniform(postProcessingShaderProgram, "grid.resolution", textureSizes[currentTextureIndex]);
+        SetUniform(postProcessingShaderProgram, "grid.resolution", textureSize);
 
         SetUniform(postProcessingShaderProgram, "time", static_cast<float>(glfwGetTime()));
         SetUniform(postProcessingShaderProgram, "stepSizeFactor", 1.0f / stepSizeFactor);
@@ -385,12 +336,24 @@ int main() {
 
         glfwSwapBuffers(window);
         glfwPollEvents();
-        finishFrameTime = glfwGetTime();
-        deltaTime = static_cast<float>(finishFrameTime - currentTime);
-        currentTime = finishFrameTime;
+
+        currentTime = glfwGetTime();
+        double deltaTime = currentTime - lastFrameTime;
+
+        logger.Update(deltaTime);
+
+        if (currentTime > testStartTime && !logger.isFinished) {
+            if (!logger.isRecording) {
+                logger.StartRecording(textureSize, stepSizeFactor, numFramesToLog);
+                printf("Performance Test Started!\n");
+            }
+        }
+
+        lastFrameTime = currentTime;
     }
 
     glDeleteProgram(modelShaderProgram);
+    glDeleteProgram(postProcessingShaderProgram);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();

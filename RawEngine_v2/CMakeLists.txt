@@ -32,6 +32,8 @@ add_executable(RawEngine main.cpp
         core/RenderPass.h
         Custom/stb_perlin.h
         Custom/perlin.h
+        Custom/PerformanceLogger.cpp
+        Custom/PerformanceLogger.h
 )
 
 add_custom_command(
